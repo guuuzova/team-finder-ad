@@ -1,19 +1,29 @@
+from http import HTTPStatus
+
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import ProjectForm
 from .models import STATUS_CLOSED, STATUS_OPEN, Project
+from .utils import paginate
 
 PROJECTS_PAGE_SIZE = 12
+PROJECT_DETAILS_URL_NAME = "projects:details"
+NOT_FOUND_PAYLOAD = {"status": "error", "message": "Project not found"}
+
+
+def _get_project_or_json_404(project_id):
+    project = Project.objects.filter(pk=project_id).first()
+    if project is None:
+        return None, JsonResponse(NOT_FOUND_PAYLOAD, status=HTTPStatus.NOT_FOUND)
+    return project, None
 
 
 def project_list_view(request):
-    queryset = Project.objects.all().order_by("-created_at")
-    paginator = Paginator(queryset, PROJECTS_PAGE_SIZE)
-    page_obj = paginator.get_page(request.GET.get("page"))
+    queryset = Project.objects.select_related("owner").order_by("-created_at")
+    page_obj = paginate(request, queryset, PROJECTS_PAGE_SIZE)
     return render(
         request,
         "projects/project_list.html",
@@ -26,13 +36,15 @@ def project_list_view(request):
 
 
 def project_details_view(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
+    project = get_object_or_404(
+        Project.objects.select_related("owner"), pk=project_id
+    )
     return render(request, "projects/project-details.html", {"project": project})
 
 
 @login_required
 def favorite_projects_view(request):
-    queryset = request.user.favorites.all().order_by("-created_at")
+    queryset = request.user.favorites.select_related("owner").order_by("-created_at")
     return render(
         request,
         "projects/favorite_projects.html",
@@ -49,7 +61,7 @@ def create_project_view(request):
             project.owner = request.user
             project.save()
             project.participants.add(request.user)
-            return redirect(f"/projects/{project.id}")
+            return redirect(PROJECT_DETAILS_URL_NAME, project_id=project.id)
         return render(
             request,
             "projects/create-project.html",
@@ -71,7 +83,7 @@ def edit_project_view(request, project_id):
         form = ProjectForm(request.POST, instance=project)
         if form.is_valid():
             form.save()
-            return redirect(f"/projects/{project.id}")
+            return redirect(PROJECT_DETAILS_URL_NAME, project_id=project.id)
         return render(
             request,
             "projects/create-project.html",
@@ -88,35 +100,39 @@ def edit_project_view(request, project_id):
 @require_POST
 @login_required
 def toggle_favorite_view(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
-    if project in request.user.favorites.all():
+    project, error = _get_project_or_json_404(project_id)
+    if error is not None:
+        return error
+    is_favorite = request.user.favorites.filter(pk=project.pk).exists()
+    if is_favorite:
         request.user.favorites.remove(project)
-        favorited = False
     else:
         request.user.favorites.add(project)
-        favorited = True
-    return JsonResponse({"status": "ok", "favorited": favorited})
+    return JsonResponse({"status": "ok", "favorited": not is_favorite})
 
 
 @require_POST
 @login_required
 def toggle_participate_view(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
-    if request.user in project.participants.all():
+    project, error = _get_project_or_json_404(project_id)
+    if error is not None:
+        return error
+    is_participant = project.participants.filter(pk=request.user.pk).exists()
+    if is_participant:
         project.participants.remove(request.user)
-        participant = False
     else:
         project.participants.add(request.user)
-        participant = True
-    return JsonResponse({"status": "ok", "participant": participant})
+    return JsonResponse({"status": "ok", "participant": not is_participant})
 
 
 @require_POST
 @login_required
 def complete_project_view(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
+    project, error = _get_project_or_json_404(project_id)
+    if error is not None:
+        return error
     if project.owner_id != request.user.id or project.status != STATUS_OPEN:
-        return JsonResponse({"status": "error"}, status=400)
+        return JsonResponse({"status": "error"}, status=HTTPStatus.BAD_REQUEST)
     project.status = STATUS_CLOSED
     project.save(update_fields=["status"])
     return JsonResponse({"status": "ok", "project_status": STATUS_CLOSED})

@@ -1,34 +1,8 @@
-import re
-from urllib.parse import urlparse
-
 from django import forms
 from django.contrib.auth.forms import PasswordChangeForm as DjangoPasswordChangeForm
 
 from .models import User
-
-PHONE_RE = re.compile(r"^(\+7|8)\d{10}$")
-PHONE_LOCAL_PREFIX = "8"
-PHONE_INTERNATIONAL_PREFIX = "+7"
-GITHUB_HOSTS = {"github.com", "www.github.com"}
-
-
-def validate_github_url(value):
-    if not value:
-        return value
-    parsed = urlparse(value)
-    if not parsed.scheme or not parsed.netloc:
-        raise forms.ValidationError("Введите корректную ссылку.")
-    if parsed.netloc.lower() not in GITHUB_HOSTS:
-        raise forms.ValidationError("Ссылка должна вести на github.com.")
-    return value
-
-
-def normalize_phone(value):
-    if not value:
-        return value
-    if value.startswith(PHONE_LOCAL_PREFIX):
-        return PHONE_INTERNATIONAL_PREFIX + value[1:]
-    return value
+from .utils import PHONE_RE, normalize_phone, validate_github_url
 
 
 class RegisterForm(forms.ModelForm):

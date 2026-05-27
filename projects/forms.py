@@ -1,6 +1,6 @@
 from django import forms
 
-from users.forms import validate_github_url
+from users.utils import validate_github_url
 
 from .models import Project
 

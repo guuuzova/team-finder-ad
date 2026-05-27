@@ -1,15 +1,16 @@
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from projects.models import Project
 
 from .forms import EditProfileForm, LoginForm, PasswordChangeForm, RegisterForm
 from .models import User
+from .utils import paginate
 
 USERS_PAGE_SIZE = 12
-HOME_URL = "/projects/list/"
+HOME_URL_NAME = "projects:list"
 
 FILTER_FAVORITE_OWNERS = "owners-of-favorite-projects"
 FILTER_PARTICIPATING_OWNERS = "owners-of-participating-projects"
@@ -33,7 +34,7 @@ def register_view(request):
             )
             if user is not None:
                 login(request, user)
-            return redirect(HOME_URL)
+            return redirect(HOME_URL_NAME)
         return render(request, "users/register.html", {"form": form})
     return render(request, "users/register.html", {"form": RegisterForm()})
 
@@ -49,7 +50,7 @@ def login_view(request):
             )
             if user is not None:
                 login(request, user)
-                return redirect(HOME_URL)
+                return redirect(HOME_URL_NAME)
             form.add_error(None, "Неверный имейл или пароль")
         return render(request, "users/login.html", {"form": form})
     return render(request, "users/login.html", {"form": LoginForm()})
@@ -57,7 +58,7 @@ def login_view(request):
 
 def logout_view(request):
     logout(request)
-    return redirect(HOME_URL)
+    return redirect(HOME_URL_NAME)
 
 
 def _apply_user_filter(queryset, active_filter, current_user):
@@ -85,8 +86,7 @@ def user_list_view(request):
     else:
         active_filter = None
 
-    paginator = Paginator(queryset, USERS_PAGE_SIZE)
-    page_obj = paginator.get_page(request.GET.get("page"))
+    page_obj = paginate(request, queryset, USERS_PAGE_SIZE)
     query_prefix = f"filter={active_filter}&" if active_filter else ""
     return render(
         request,
@@ -111,7 +111,7 @@ def edit_profile_view(request):
         form = EditProfileForm(request.POST, request.FILES, instance=request.user)
         if form.is_valid():
             form.save()
-            return redirect(f"/users/{request.user.id}")
+            return redirect(reverse("users:details", args=[request.user.id]))
         return render(request, "users/edit_profile.html", {"form": form})
     form = EditProfileForm(instance=request.user)
     return render(request, "users/edit_profile.html", {"form": form})
@@ -124,7 +124,7 @@ def change_password_view(request):
         if form.is_valid():
             user = form.save()
             update_session_auth_hash(request, user)
-            return redirect(f"/users/{request.user.id}")
+            return redirect(reverse("users:details", args=[request.user.id]))
         return render(request, "users/change_password.html", {"form": form})
     form = PasswordChangeForm(request.user)
     return render(request, "users/change_password.html", {"form": form})
