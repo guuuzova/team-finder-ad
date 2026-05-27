@@ -1,3 +1,20 @@
+# TeamFinder — настройка и запуск проекта
+
+Реализован **Вариант 1** задания (избранное и фильтрация пользователей).
+
+## Запуск
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+cp .env_example .env
+docker compose up -d
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
 # Первоначальная настройка проекта TeamFinder
 
 ## 1. Виртуальное окружение
